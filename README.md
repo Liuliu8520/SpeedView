@@ -5,24 +5,30 @@
 ## 功能特性
 
 - **悬浮显示**：圆形悬浮球，`TYPE_APPLICATION_OVERLAY` 层级，始终显示在其他应用上方
-- **实时速度**：`FusedLocationProviderClient` 1 秒间隔回调，数字醒目显示（km/h）
+- **实时速度**：`FusedLocationProviderClient` 动态间隔回调（超速 0.5s / 常规 1s，平衡灵敏度与能耗），数字醒目显示（km/h）
 - **累计里程**：服务运行期间持续累计，精确到 0.1 km
 - **速度统计**：平均速度、最高速度
+- **速度折线图**：主界面展示最近 2 分钟速度变化趋势（120 个采样点），颜色随速度变色
 - **拖拽与点击**：任意拖拽移动（边界夹紧），8dp 阈值区分点击/拖拽，点击打开主界面
 - **速度环**：外圈进度弧随速度填充，达到「弧满量程最大速度」时闭合为整圆
-- **三段变色**：相对「变色参考速度」`<90%` 绿 / `90%~110%` 橙 / `≥110%` 红（超速时数字也变红）
+- **四段变色**：相对「变色参考速度」`≤80%` 蓝 / `<90%` 绿 / `90%~110%` 橙 / `≥110%` 红，悬浮球环色、数字、主界面速度值、折线图同步变色
 - **可配置**：变色参考速度、弧满量程最大速度、悬浮球大小（64~256 dp）
 - **模拟测试**：内置模拟数据生成器，按活动类型（步行/跑步/自行车/电动轻便摩托车/摩托车/汽车）在区间内波动，无需真实 GPS 即可测试
 
 ## 截图
 
-**主界面与悬浮球**
-
-<img width="1200" height="2670" alt="主界面与悬浮球" src="https://github.com/user-attachments/assets/c0dabced-cf67-4b55-beee-85cca4029370" />
-
-**设置弹窗**
-
-<img width="1200" height="2670" alt="设置弹窗" src="https://github.com/user-attachments/assets/2f256c7a-46d0-42ac-b11d-945178ae4a36" />
+<table>
+  <tr>
+    <td align="center"><b>主界面与悬浮球</b></td>
+    <td width="30"></td>
+    <td align="center"><b>设置弹窗</b></td>
+  </tr>
+  <tr>
+    <td><img width="300" alt="主界面与悬浮球" src="https://github.com/user-attachments/assets/c0dabced-cf67-4b55-beee-85cca4029370" /></td>
+      <td></td>
+    <td><img width="300" alt="设置弹窗" src="https://github.com/user-attachments/assets/2f256c7a-46d0-42ac-b11d-945178ae4a36" /></td>
+  </tr>
+</table>
 
 ## 技术栈
 
@@ -46,6 +52,7 @@ app/src/main/
 │   ├── FloatingService.java         # 前台服务、定位回调、模拟数据
 │   ├── FloatingViewManager.java     # 悬浮球窗口管理（单例）、拖拽/点击、统计
 │   ├── SpeedFloatingView.java       # 自定义 View：圆形速度球绘制
+│   ├── SpeedChartView.java          # 自定义 View：速度折线图绘制
 │   ├── AppPrefs.java                # SharedPreferences 设置项封装
 │   └── MockProfile.java             # 模拟数据活动类型预设
 └── res/
@@ -111,10 +118,11 @@ cd SpeedView
 - **弧满量程最大速度**：进度弧 100% 对应的速度，达到该值弧闭合为整圆
 - **测试数据范围**：模拟模式的速度波动区间
 - **悬浮球大小**：64~256 dp，步进 8，确定后即时生效
+- **模拟模式**：开启后使用模拟数据而非真实 GPS（需重新开始测速生效）
 
 ### 模拟测试模式
 
-主界面底部「模拟模式（测试用）」开关开启后，点击「开始测速」将使用模拟数据而非真实 GPS：
+设置弹窗中开启「模拟模式」后，点击「开始测速」将使用模拟数据而非真实 GPS：
 
 | 类型 | 速度区间 (km/h) |
 |------|----------------|
@@ -134,6 +142,7 @@ cd SpeedView
 - 定位精度 `accuracy < 20m` 才采纳
 - 单次位移 `0~50m` 才计入里程（超出视为漂移丢弃）
 - 速度取 `location.getSpeed() * 3.6`（m/s → km/h）
+- 动态频率：速度超过变色参考速度时 0.5s 回调，否则 1s 回调，降低低速场景能耗
 - 统计在主线程执行（定位回调通过主线程 looper 投递）
 
 ## 兼容性说明
