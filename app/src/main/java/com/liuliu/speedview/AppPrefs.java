@@ -12,6 +12,7 @@ public final class AppPrefs {
     private static final String KEY_ARC_MAX_SPEED = "arc_max_speed_kmh";
     private static final String KEY_MOCK_PROFILE_IDX = "mock_profile_idx";
     private static final String KEY_BALL_SIZE_DP = "ball_size_dp";
+    private static final String KEY_MOCK_ENABLED = "mock_enabled";
     private static final int DEFAULT_REF_SPEED = 60;
     private static final int DEFAULT_ARC_MAX_SPEED = 80;
     private static final float DEFAULT_BALL_SIZE_DP = 112f;
@@ -74,6 +75,19 @@ public final class AppPrefs {
         c.getSharedPreferences(NAME, Context.MODE_PRIVATE)
                 .edit()
                 .putFloat(KEY_BALL_SIZE_DP, clamped)
+                .apply();
+    }
+
+    /** 模拟模式开关是否打开（仅当服务未运行时用作恢复初值），默认 false。 */
+    public static boolean getMockEnabled(Context c) {
+        return c.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+                .getBoolean(KEY_MOCK_ENABLED, false);
+    }
+
+    public static void setMockEnabled(Context c, boolean enabled) {
+        c.getSharedPreferences(NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_MOCK_ENABLED, enabled)
                 .apply();
     }
 }

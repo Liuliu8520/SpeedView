@@ -15,6 +15,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
@@ -35,10 +36,12 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvSpeed, tvDistance, tvAvg, tvMax, tvStatus;
     private MaterialButton btnToggle;
     private ImageButton btnSettings;
-    private MaterialSwitch switchMock;
+    private SpeedChartView chartSpeed;
     private boolean mockEnabled = false;
 
     private boolean riding = false;
+    // 二次返回退出的首次按下时间戳
+    private long backPressedTime = 0L;
     // 统计数据更新监听器：服务写入新值时主线程回调，同步刷新主界面（替代轮询）
     private final FloatingViewManager.OnStatsListener statsListener = this::refreshUI;
 
@@ -98,12 +101,37 @@ public class MainActivity extends AppCompatActivity {
         tvStatus = findViewById(R.id.tv_status);
         btnToggle = findViewById(R.id.btn_toggle);
         btnSettings = findViewById(R.id.btn_settings);
-        switchMock = findViewById(R.id.switch_mock);
+        chartSpeed = findViewById(R.id.chart_speed);
 
         btnToggle.setOnClickListener(v -> onToggleClicked());
         btnSettings.setOnClickListener(v -> showSettingsDialog());
-        switchMock.setOnCheckedChangeListener((button, checked) -> mockEnabled = checked);
+
+        // 恢复测速/模拟状态：Activity 重建后从运行中的服务与持久化偏好读取，
+        // 避免退出后再进入导致"结束测速"按钮与"模拟模式"状态被重置。
+        riding = FloatingService.isRunning();
+        mockEnabled = FloatingService.isRunning()
+                ? FloatingService.isMockMode()
+                : AppPrefs.getMockEnabled(this);
+
         updateButtonUI();
+        setupBackPress();
+    }
+
+    /** 二次返回退出：首次提示，2 秒内再按一次退出。测速中退出，前台服务与浮球继续在后台运行。 */
+    private void setupBackPress() {
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (System.currentTimeMillis() - backPressedTime < 2000L) {
+                    finish();
+                } else {
+                    backPressedTime = System.currentTimeMillis();
+                    Toast.makeText(MainActivity.this,
+                            riding ? R.string.toast_back_again_riding : R.string.toast_back_again,
+                            Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
     }
 
     private void onToggleClicked() {
@@ -116,6 +144,11 @@ public class MainActivity extends AppCompatActivity {
 
     /** 检查权限链，逐步申请，全部满足后启动服务。 */
     private void tryStartRide() {
+        // 0. 非模拟模式下，系统定位必须已开启，否则点击无效并提示
+        if (!mockEnabled && !isLocationEnabled()) {
+            Toast.makeText(this, R.string.toast_location_off, Toast.LENGTH_LONG).show();
+            return;
+        }
         // 1. 前台定位权限
         if (!hasFineLocation()) {
             locationPermissionLauncher.launch(new String[]{
@@ -169,10 +202,29 @@ public class MainActivity extends AppCompatActivity {
 
     private void refreshUI() {
         FloatingViewManager mgr = FloatingViewManager.getInstance();
-        tvSpeed.setText(formatSpeed(mgr.getCurrentSpeedKmh()));
+        float currentSpeed = mgr.getCurrentSpeedKmh();
+        tvSpeed.setText(formatSpeed(currentSpeed));
+        // 当前速度值颜色随悬浮球变色（绿/橙/红 三段，与悬浮球环色一致）
+        int limit = mgr.getSpeedLimitKmh();
+        float ratio = limit > 0 ? currentSpeed / limit : 0f;
+        tvSpeed.setTextColor(getColor(resolveSpeedColorRes(ratio)));
         tvDistance.setText(formatDistance(mgr.getDistanceKm()));
         tvAvg.setText(formatSpeedKmh(mgr.getAvgSpeedKmh()));
         tvMax.setText(formatSpeedKmh(mgr.getMaxSpeedKmh()));
+        if (chartSpeed != null) {
+            chartSpeed.invalidate();
+        }
+    }
+
+    /**
+     * 主界面速度值变色资源：≤80% 恢复蓝色（原默认色），80%~90% 绿，90%~110% 橙，>=110% 红。
+     * 高速段（绿/橙/红）与悬浮球环色保持一致，低速段恢复蓝色以保持原视觉风格。
+     */
+    private int resolveSpeedColorRes(float ratio) {
+        if (ratio >= 1.1f) return R.color.speed_red;
+        if (ratio >= 0.9f) return R.color.speed_orange;
+        if (ratio > 0.8f) return R.color.speed_green;
+        return R.color.speed_blue;
     }
 
     @Override
@@ -222,6 +274,20 @@ public class MainActivity extends AppCompatActivity {
                 == PackageManager.PERMISSION_GRANTED;
     }
 
+    /** 系统定位开关是否已开启（GPS 或网络定位任一可用）。 */
+    @SuppressWarnings("MissingPermission")
+    private boolean isLocationEnabled() {
+        android.location.LocationManager lm = (android.location.LocationManager)
+                getSystemService(LOCATION_SERVICE);
+        if (lm == null) return false;
+        try {
+            return lm.isProviderEnabled(android.location.LocationManager.GPS_PROVIDER)
+                    || lm.isProviderEnabled(android.location.LocationManager.NETWORK_PROVIDER);
+        } catch (SecurityException e) {
+            return false;
+        }
+    }
+
     /** 设置弹窗：变色参考速度 / 弧满量程最大速度 / 测试数据范围 / 悬浮球大小。 */
     private void showSettingsDialog() {
         View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_settings, null);
@@ -230,6 +296,7 @@ public class MainActivity extends AppCompatActivity {
         TextInputEditText etArcMax = dialogView.findViewById(R.id.et_arc_max_speed);
         MaterialAutoCompleteTextView actvProfile = dialogView.findViewById(R.id.actv_mock_profile);
         Slider sliderBallSize = dialogView.findViewById(R.id.slider_ball_size);
+        MaterialSwitch switchMock = dialogView.findViewById(R.id.switch_mock);
 
         etRefSpeed.setText(String.valueOf(AppPrefs.getRefSpeed(this)));
         etArcMax.setText(String.valueOf(AppPrefs.getArcMaxSpeed(this)));
@@ -239,6 +306,9 @@ public class MainActivity extends AppCompatActivity {
         // 悬浮球大小滑块
         float savedSize = AppPrefs.getBallSizeDp(this);
         sliderBallSize.setValue(snapToStep(savedSize, 64f, 256f, 8f));
+
+        // 模拟模式开关：初始状态取当前 mockEnabled
+        switchMock.setChecked(mockEnabled);
 
         // 活动类型下拉
         String[] profileNames = MockProfile.names();
@@ -273,6 +343,10 @@ public class MainActivity extends AppCompatActivity {
                     AppPrefs.setArcMaxSpeed(this, arcMax);
                     AppPrefs.setMockProfileIdx(this, profileIdx);
                     AppPrefs.setBallSizeDp(this, ballSize);
+
+                    // 模拟模式开关：仅持久化并更新内存值，运行中的服务模式不变（需重启测速生效）
+                    mockEnabled = switchMock.isChecked();
+                    AppPrefs.setMockEnabled(this, mockEnabled);
 
                     FloatingViewManager m = FloatingViewManager.getInstance();
                     m.setSpeedLimit(refSpeed);
@@ -317,7 +391,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String formatSpeed(float kmh) {
-        return String.format(kmh < 10f ? "%.1f" : "%.0f", kmh);
+        return String.valueOf(Math.round(kmh));
     }
 
     private String formatDistance(float km) {
@@ -325,7 +399,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String formatSpeedKmh(float kmh) {
-        return String.format("%.1f km/h", kmh);
+        return Math.round(kmh) + " km/h";
     }
 
     private void toast(int resId) {

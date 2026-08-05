@@ -9,6 +9,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.WindowManager.LayoutParams;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -17,7 +18,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * 职责：
  * 1. 通过 {@link WindowManager} 把 {@link SpeedFloatingView} 添加到 TYPE_APPLICATION_OVERLAY 层。
  * 2. 处理拖拽（更新 LayoutParams.x/y 并做屏幕边界夹紧）与点击（8dp 阈值区分）。
- * 3. 持有骑行统计数据，供 {@link FloatingService} 写入、{@link MainActivity} 读取。
+ * 3. 持有测速统计数据，供 {@link FloatingService} 写入、{@link MainActivity} 读取。
  */
 public class FloatingViewManager {
 
@@ -32,7 +33,7 @@ public class FloatingViewManager {
     private LayoutParams layoutParams;
     private boolean added = false;
 
-    // 骑行统计（在主线程访问，定位回调同样通过主线程 looper 投递）
+    // 测速统计（在主线程访问，定位回调同样通过主线程 looper 投递）
     private float currentSpeedKmh = 0f;
     private float totalDistanceMeter = 0f;
     private float maxSpeedKmh = 0f;
@@ -44,6 +45,9 @@ public class FloatingViewManager {
     private int arcMaxSpeedKmh = 80;
     // 悬浮球直径（dp），缓存
     private float ballSizeDp = 112f;
+    // 速度历史采样（最近 HISTORY_LIMIT 个点，供主界面折线图绘制）
+    private static final int HISTORY_LIMIT = 120;
+    private final List<Float> speedHistory = new ArrayList<>();
     // 统计数据更新监听器（主线程回调）
     private final List<OnStatsListener> statsListeners = new CopyOnWriteArrayList<>();
 
@@ -131,6 +135,11 @@ public class FloatingViewManager {
         return arcMaxSpeedKmh;
     }
 
+    /** 变色参考速度（km/h），供折线图等读取。 */
+    public int getSpeedLimitKmh() {
+        return speedLimitKmh;
+    }
+
     /** 设置悬浮球直径（dp）。即使球未显示也会缓存，显示时自动应用。 */
     public void setBallSize(float dp) {
         this.ballSizeDp = dp;
@@ -189,6 +198,10 @@ public class FloatingViewManager {
         if (kmh > maxSpeedKmh) maxSpeedKmh = kmh;
         speedSumKmh += kmh;
         speedSampleCount++;
+        speedHistory.add(kmh);
+        if (speedHistory.size() > HISTORY_LIMIT) {
+            speedHistory.remove(0);
+        }
         if (floatingView != null && added) {
             floatingView.setSpeed(kmh);
         }
@@ -210,8 +223,14 @@ public class FloatingViewManager {
         maxSpeedKmh = 0f;
         speedSumKmh = 0d;
         speedSampleCount = 0L;
+        speedHistory.clear();
         if (floatingView != null && added) floatingView.setSpeed(0f);
         notifyStatsUpdated();
+    }
+
+    /** 最近速度采样（最多 120 个点，1 秒一个），供折线图绘制。主线程访问。 */
+    public List<Float> getSpeedHistory() {
+        return speedHistory;
     }
 
     public float getCurrentSpeedKmh() {

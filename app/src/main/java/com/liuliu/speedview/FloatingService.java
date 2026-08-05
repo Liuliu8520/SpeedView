@@ -4,17 +4,23 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.Service;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
+import android.location.LocationManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationCallback;
 import com.google.android.gms.location.LocationRequest;
@@ -37,6 +43,24 @@ public class FloatingService extends Service {
     /** Intent extra：为 true 时使用模拟数据，不依赖真实定位（用于功能测试）。 */
     public static final String EXTRA_MOCK_MODE = "mock_mode";
 
+    /**
+     * 服务运行状态静态标志：onCreate 置 true，onDestroy 置 false。
+     * 用于 Activity 重建后判断测速是否仍在进行（前台服务可能在 Activity 销毁后继续运行）。
+     */
+    private static volatile boolean sRunning = false;
+    /** 服务当前的模拟模式（仅当 sRunning=true 时有效）。 */
+    private static volatile boolean sMockMode = false;
+
+    /** 服务是否正在运行。 */
+    public static boolean isRunning() {
+        return sRunning;
+    }
+
+    /** 服务当前的模拟模式。仅在 {@link #isRunning()} 为 true 时有意义。 */
+    public static boolean isMockMode() {
+        return sMockMode;
+    }
+
     /** 定位精度阈值（米），超过则视为漂移丢弃 */
     private static final float ACCURACY_THRESHOLD_M = 20f;
     /** 单次位移阈值（米），超出 [0, 50] 视为漂移丢弃 */
@@ -49,6 +73,20 @@ public class FloatingService extends Service {
     private LocationCallback locationCallback;
     private Location lastLocation;
     private boolean receivingLocation = false;
+
+    // 监听系统定位开关变化：定位被关闭时提示，重新开启后自动恢复定位
+    private final BroadcastReceiver locationStateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (mockMode || receivingLocation) return;
+            if (isLocationEnabled()) {
+                // 定位已重新开启，尝试恢复
+                startLocationUpdates();
+                updateNotificationText(getString(R.string.notif_text));
+            }
+        }
+    };
+    private boolean receiverRegistered = false;
 
     // 模拟模式：用正弦波 + 抖动生成速度，便于无 GPS 环境下测试变色与里程
     private boolean mockMode = false;
@@ -81,9 +119,18 @@ public class FloatingService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        sRunning = true;
         FloatingViewManager.getInstance().init(this);
         fusedClient = LocationServices.getFusedLocationProviderClient(this);
         createNotificationChannel();
+        // 注册定位开关监听（API 31+ 用 ACTION_PROTOCOL_PROVIDER_CHANGED，兼容旧版 PROVIDERS_CHANGED）
+        IntentFilter filter = new IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION);
+        try {
+            registerReceiver(locationStateReceiver, filter);
+            receiverRegistered = true;
+        } catch (Exception e) {
+            receiverRegistered = false;
+        }
     }
 
     @Override
@@ -98,6 +145,7 @@ public class FloatingService extends Service {
         mgr.show();
 
         mockMode = intent != null && intent.getBooleanExtra(EXTRA_MOCK_MODE, false);
+        sMockMode = mockMode;
         if (mockMode) {
             startMockUpdates();
         } else {
@@ -110,7 +158,17 @@ public class FloatingService extends Service {
     public void onDestroy() {
         stopMockUpdates();
         stopLocationUpdates();
+        if (receiverRegistered) {
+            try {
+                unregisterReceiver(locationStateReceiver);
+            } catch (Exception e) {
+                // 忽略未注册异常
+            }
+            receiverRegistered = false;
+        }
         FloatingViewManager.getInstance().hide();
+        sRunning = false;
+        sMockMode = false;
         super.onDestroy();
     }
 
@@ -150,13 +208,46 @@ public class FloatingService extends Service {
     }
 
     private Notification buildNotification() {
+        return buildNotification(getString(R.string.notif_text));
+    }
+
+    private Notification buildNotification(String contentText) {
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle(getString(R.string.notif_title))
-                .setContentText(getString(R.string.notif_text))
+                .setContentText(contentText)
                 .setSmallIcon(android.R.drawable.ic_menu_compass)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build();
+    }
+
+    /** 更新前台通知正文（用于定位关闭/缺 Google Play 服务时给用户提示）。 */
+    private void updateNotificationText(String text) {
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm != null) {
+            nm.notify(NOTIF_ID, buildNotification(text));
+        }
+    }
+
+    /** 判断系统定位是否已开启（GPS 或网络定位任一可用）。 */
+    @SuppressWarnings("MissingPermission")
+    private boolean isLocationEnabled() {
+        LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
+        if (lm == null) return false;
+        boolean gps = false, net = false;
+        try {
+            gps = lm.isProviderEnabled(LocationManager.GPS_PROVIDER);
+            net = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
+        } catch (SecurityException e) {
+            // 某些 ROM 查询 provider 也可能抛 SecurityException
+        }
+        return gps || net;
+    }
+
+    /** 检查 Google Play 服务是否可用（FusedLocation 依赖它）。 */
+    private boolean isGooglePlayAvailable() {
+        int code = GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this);
+        return code == com.google.android.gms.common.ConnectionResult.SUCCESS;
     }
 
     private void createNotificationChannel() {
@@ -172,6 +263,19 @@ public class FloatingService extends Service {
 
     private void startLocationUpdates() {
         if (receivingLocation) return;
+        // 前置检查 1：Google Play 服务（FusedLocation 依赖）
+        if (!isGooglePlayAvailable()) {
+            toastFromService(R.string.toast_no_google_play);
+            updateNotificationText(getString(R.string.notif_no_google_play));
+            return;
+        }
+        // 前置检查 2：系统定位开关
+        if (!isLocationEnabled()) {
+            toastFromService(R.string.toast_location_off);
+            updateNotificationText(getString(R.string.notif_location_off));
+            // 不请求定位；定位重新开启后由 locationStateReceiver 自动恢复
+            return;
+        }
         if (locationCallback == null) {
             locationCallback = new LocationCallback() {
                 @Override
@@ -191,10 +295,18 @@ public class FloatingService extends Service {
         try {
             fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper());
             receivingLocation = true;
+            updateNotificationText(getString(R.string.notif_text));
         } catch (SecurityException e) {
             // 缺少定位权限
             receivingLocation = false;
+            toastFromService(R.string.perm_rationale_location);
         }
+    }
+
+    /** 从 Service 弹 Toast（Service 无 UI，需切主线程）。 */
+    private void toastFromService(int resId) {
+        new Handler(Looper.getMainLooper()).post(() ->
+                Toast.makeText(this, resId, Toast.LENGTH_LONG).show());
     }
 
     private void stopLocationUpdates() {

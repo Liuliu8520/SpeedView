@@ -172,9 +172,6 @@ public class SpeedFloatingView extends View {
     }
 
     private String formatSpeed(float kmh) {
-        if (kmh < 10f) {
-            return String.format("%.1f", kmh);
-        }
         return String.format("%d", Math.round(kmh));
     }
 

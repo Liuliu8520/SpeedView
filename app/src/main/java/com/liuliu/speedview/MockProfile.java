@@ -26,7 +26,7 @@ public final class MockProfile {
             new MockProfile("汽车", 30f, 110f),
     };
 
-    /** 默认索引：摩托车（与本项目主题一致）。 */
+    /** 默认索引：电动轻便摩托车。 */
     public static int defaultIndex() {
         return 4;
     }

@@ -8,29 +8,33 @@
     <string name="max_speed_label">最高速度</string>
     <string name="unit_kmh">km/h</string>
     <string name="unit_km">km</string>
-    <string name="start_ride">开始骑行</string>
-    <string name="stop_ride">结束骑行</string>
+    <string name="start_ride">开始测速</string>
+    <string name="stop_ride">结束测速</string>
     <string name="riding_status_idle">未开始</string>
-    <string name="riding_status_running">骑行中</string>
+    <string name="riding_status_running">测速中</string>
 
     <!-- 通知 -->
-    <string name="notif_channel_name">骑行定位服务</string>
-    <string name="notif_channel_desc">用于在悬浮球中实时显示骑行速度</string>
+    <string name="notif_channel_name">测速定位服务</string>
+    <string name="notif_channel_desc">用于在悬浮球中实时显示速度</string>
     <string name="notif_title">SpeedView 运行中</string>
-    <string name="notif_text">正在记录骑行速度与里程</string>
+    <string name="notif_text">正在记录速度与里程</string>
+    <string name="notif_location_off">定位未开启，请在系统设置中打开定位</string>
+    <string name="notif_no_google_play">缺少 Google Play 服务，无法获取定位</string>
+    <string name="toast_location_off">系统定位未开启，请到设置中打开定位后重试</string>
+    <string name="toast_no_google_play">本应用依赖 Google Play 服务获取定位，当前设备不可用</string>
 
     <!-- 权限说明 -->
-    <string name="perm_rationale_location">需要定位权限才能实时显示骑行速度并记录里程。</string>
+    <string name="perm_rationale_location">需要定位权限才能实时显示速度并记录里程。</string>
     <string name="perm_rationale_overlay">需要悬浮窗权限才能在其他应用上方显示速度浮球。</string>
-    <string name="perm_rationale_bg_location">需要后台定位权限才能在屏幕关闭或切到后台时继续记录骑行数据。</string>
-    <string name="perm_rationale_notification">需要通知权限以显示前台服务通知，保证骑行中持续定位。</string>
+    <string name="perm_rationale_bg_location">需要后台定位权限才能在屏幕关闭或切到后台时继续记录速度数据。</string>
+    <string name="perm_rationale_notification">需要通知权限以显示前台服务通知，保证测速中持续定位。</string>
 
     <!-- 设置 -->
     <string name="settings">设置</string>
     <string name="settings_ref_speed">变色参考速度</string>
-    <string name="settings_ref_speed_hint">超过该速度的 90% 变橙，110% 变红</string>
+    <string name="settings_ref_speed_hint">超过该速度的 90%% 变橙，110%% 变红</string>
     <string name="settings_arc_max_speed">弧满量程最大速度</string>
-    <string name="settings_arc_max_speed_hint">速度达到该值时进度弧填满 100%</string>
+    <string name="settings_arc_max_speed_hint">速度达到该值时进度弧填满 100%%</string>
     <string name="settings_mock_profile">测试数据范围</string>
     <string name="settings_mock_profile_hint">选择模拟速度的波动区间</string>
     <string name="settings_ball_size">悬浮球大小</string>
@@ -42,6 +46,10 @@
     <string name="settings_ref_exceeds_arc">变色参考速度不能大于弧满量程最大速度</string>
 
     <!-- 模拟模式 -->
-    <string name="mock_mode">模拟模式（测试用）</string>
+    <string name="mock_mode">模拟模式</string>
     <string name="mock_mode_desc">不使用真实定位，用模拟速度数据驱动浮球</string>
+
+    <!-- 退出提示 -->
+    <string name="toast_back_again">再按一次返回键退出应用</string>
+    <string name="toast_back_again_riding">再按一次返回键退出，测速将在后台继续运行</string>
 </resources>

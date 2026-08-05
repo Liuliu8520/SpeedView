@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:padding="24dp">
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
 
     <!-- 变色参考速度 -->
     <TextView
@@ -129,4 +134,21 @@
         android:stepSize="8"
         app:labelBehavior="floating" />
 
+    <!-- 模拟模式 -->
+    <com.google.android.material.materialswitch.MaterialSwitch
+        android:id="@+id/switch_mock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/mock_mode" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:text="@string/mock_mode_desc"
+        android:textColor="@color/speed_blue_light"
+        android:textSize="12sp" />
+
 </LinearLayout>
+</ScrollView>
