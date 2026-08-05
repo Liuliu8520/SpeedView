@@ -18,11 +18,11 @@
 
 **主界面与悬浮球**
 
-<img src="https://github.com/user-attachments/assets/1b3a4a6c-5b34-4cfc-8ae7-5e7fd93e1671" width="360" alt="主界面与悬浮球"/>
+<img width="210" alt="主界面与悬浮球" src="https://github.com/user-attachments/assets/0a8a2d18-ce78-4fe2-bb03-e514a7861c79" />
 
 **设置弹窗**
 
-<img src="https://github.com/user-attachments/assets/84e5d2e7-479e-4fe2-96ad-627bf0094ff1" width="360" alt="设置弹窗"/>
+<img width="210" alt="设置弹窗" src="https://github.com/user-attachments/assets/a73ad378-a8d6-4f3f-8bae-98881fcae0c4" />
 
 ## 技术栈
 
