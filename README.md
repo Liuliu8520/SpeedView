@@ -16,7 +16,13 @@
 
 ## 截图
 
-> 待添加：主界面、悬浮球、设置弹窗截图
+**主界面与悬浮球**
+
+<img src="https://github.com/user-attachments/assets/1b3a4a6c-5b34-4cfc-8ae7-5e7fd93e1671" width="360" alt="主界面与悬浮球"/>
+
+**设置弹窗**
+
+<img src="https://github.com/user-attachments/assets/84e5d2e7-479e-4fe2-96ad-627bf0094ff1" width="360" alt="设置弹窗"/>
 
 ## 技术栈
 
