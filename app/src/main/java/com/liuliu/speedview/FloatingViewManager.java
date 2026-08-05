@@ -9,6 +9,9 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.WindowManager.LayoutParams;
 
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+
 /**
  * 悬浮球窗口管理器（单例）。
  * 职责：
@@ -41,6 +44,13 @@ public class FloatingViewManager {
     private int arcMaxSpeedKmh = 80;
     // 悬浮球直径（dp），缓存
     private float ballSizeDp = 112f;
+    // 统计数据更新监听器（主线程回调）
+    private final List<OnStatsListener> statsListeners = new CopyOnWriteArrayList<>();
+
+    /** 统计数据（速度/里程/均速/最高）更新时回调，回调在主线程。 */
+    public interface OnStatsListener {
+        void onStatsUpdated();
+    }
 
     private FloatingViewManager() {
     }
@@ -140,6 +150,25 @@ public class FloatingViewManager {
         return ballSizeDp;
     }
 
+    /** 注册统计数据更新监听器（主线程回调）。重复注册同一实例会被忽略。 */
+    public void registerStatsListener(OnStatsListener l) {
+        if (l != null && !statsListeners.contains(l)) {
+            statsListeners.add(l);
+        }
+    }
+
+    /** 取消注册监听器。 */
+    public void unregisterStatsListener(OnStatsListener l) {
+        statsListeners.remove(l);
+    }
+
+    /** 通知所有监听器刷新（主线程调用）。 */
+    private void notifyStatsUpdated() {
+        for (OnStatsListener l : statsListeners) {
+            l.onStatsUpdated();
+        }
+    }
+
     /** 隐藏悬浮球。 */
     public void hide() {
         if (!added || floatingView == null) return;
@@ -163,11 +192,15 @@ public class FloatingViewManager {
         if (floatingView != null && added) {
             floatingView.setSpeed(kmh);
         }
+        notifyStatsUpdated();
     }
 
     /** 累加里程（单位：米）。 */
     public void addDistance(float meter) {
-        if (meter > 0f) totalDistanceMeter += meter;
+        if (meter > 0f) {
+            totalDistanceMeter += meter;
+            notifyStatsUpdated();
+        }
     }
 
     /** 重置统计（不重置悬浮球位置）。 */
@@ -178,6 +211,7 @@ public class FloatingViewManager {
         speedSumKmh = 0d;
         speedSampleCount = 0L;
         if (floatingView != null && added) floatingView.setSpeed(0f);
+        notifyStatsUpdated();
     }
 
     public float getCurrentSpeedKmh() {

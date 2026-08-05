@@ -6,8 +6,6 @@ import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.Settings;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -41,8 +39,8 @@ public class MainActivity extends AppCompatActivity {
     private boolean mockEnabled = false;
 
     private boolean riding = false;
-    private final Handler uiHandler = new Handler(Looper.getMainLooper());
-    private final long refreshIntervalMs = 500L;
+    // 统计数据更新监听器：服务写入新值时主线程回调，同步刷新主界面（替代轮询）
+    private final FloatingViewManager.OnStatsListener statsListener = this::refreshUI;
 
     // 权限请求：定位 + 通知（Android 13+）
     private final ActivityResultLauncher<String[]> locationPermissionLauncher =
@@ -159,26 +157,15 @@ public class MainActivity extends AppCompatActivity {
         ContextCompat.startForegroundService(this, service);
         riding = true;
         updateButtonUI();
-        uiHandler.postDelayed(refreshRunnable, refreshIntervalMs);
+        refreshUI();
     }
 
     private void stopRide() {
         stopService(new Intent(this, FloatingService.class));
         riding = false;
         updateButtonUI();
-        uiHandler.removeCallbacks(refreshRunnable);
         refreshUI();
     }
-
-    private final Runnable refreshRunnable = new Runnable() {
-        @Override
-        public void run() {
-            refreshUI();
-            if (riding) {
-                uiHandler.postDelayed(this, refreshIntervalMs);
-            }
-        }
-    };
 
     private void refreshUI() {
         FloatingViewManager mgr = FloatingViewManager.getInstance();
@@ -186,6 +173,22 @@ public class MainActivity extends AppCompatActivity {
         tvDistance.setText(formatDistance(mgr.getDistanceKm()));
         tvAvg.setText(formatSpeedKmh(mgr.getAvgSpeedKmh()));
         tvMax.setText(formatSpeedKmh(mgr.getMaxSpeedKmh()));
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 订阅统计数据更新：服务每写入新速度/里程时回调刷新，与悬浮球同帧
+        FloatingViewManager.getInstance().registerStatsListener(statsListener);
+        // 立即刷新一次，显示服务端当前状态（恢复前台时追赶最新值）
+        refreshUI();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // 不可见时停止刷新，避免无意义的主线程开销
+        FloatingViewManager.getInstance().unregisterStatsListener(statsListener);
     }
 
     private void updateButtonUI() {
@@ -327,11 +330,5 @@ public class MainActivity extends AppCompatActivity {
 
     private void toast(int resId) {
         Toast.makeText(this, resId, Toast.LENGTH_LONG).show();
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        uiHandler.removeCallbacks(refreshRunnable);
     }
 }
