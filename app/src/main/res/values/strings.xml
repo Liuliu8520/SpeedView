@@ -32,9 +32,9 @@
     <!-- 设置 -->
     <string name="settings">设置</string>
     <string name="settings_ref_speed">变色参考速度</string>
-    <string name="settings_ref_speed_hint">超过该速度的 90%% 变橙，110%% 变红</string>
+    <string name="settings_ref_speed_hint">超过该速度的 90% 变橙，110% 变红</string>
     <string name="settings_arc_max_speed">弧满量程最大速度</string>
-    <string name="settings_arc_max_speed_hint">速度达到该值时进度弧填满 100%%</string>
+    <string name="settings_arc_max_speed_hint">速度达到该值时进度弧填满 100%</string>
     <string name="settings_mock_profile">测试数据范围</string>
     <string name="settings_mock_profile_hint">选择模拟速度的波动区间</string>
     <string name="settings_ball_size">悬浮球大小</string>

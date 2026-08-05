@@ -32,7 +32,7 @@ import com.google.android.gms.location.Priority;
  * 悬浮球前台服务。
  * 职责：
  * 1. 以 foregroundServiceType=location 运行，保证后台持续定位。
- * 2. 使用 FusedLocationProviderClient 1 秒间隔获取定位。
+ * 2. 使用 FusedLocationProviderClient 动态间隔获取定位：速度超过变色参考速度时 0.5s，否则 1s。
  * 3. 过滤：accuracy < 20m 且单次位移 0~50m 才计入里程。
  * 4. 将速度/里程写入 {@link FloatingViewManager}，由其刷新悬浮球与统计。
  */
@@ -66,13 +66,17 @@ public class FloatingService extends Service {
     /** 单次位移阈值（米），超出 [0, 50] 视为漂移丢弃 */
     private static final float MAX_STEP_M = 50f;
     private static final float MIN_STEP_M = 0f;
-    /** 定位间隔（毫秒） */
-    private static final long LOCATION_INTERVAL_MS = 1000L;
+    /** 低速档定位间隔（毫秒）：速度 ≤ 变色参考速度时，1 秒一次以降低能耗 */
+    private static final long SLOW_INTERVAL_MS = 1000L;
+    /** 高速档定位间隔（毫秒）：速度 > 变色参考速度时，0.5 秒一次以提升灵敏度 */
+    private static final long FAST_INTERVAL_MS = 500L;
 
     private FusedLocationProviderClient fusedClient;
     private LocationCallback locationCallback;
     private Location lastLocation;
     private boolean receivingLocation = false;
+    /** 当前是否处于高速档（true=0.5s，false=1s）。仅在真实定位路径使用。 */
+    private boolean fastIntervalActive = false;
 
     // 监听系统定位开关变化：定位被关闭时提示，重新开启后自动恢复定位
     private final BroadcastReceiver locationStateReceiver = new BroadcastReceiver() {
@@ -105,8 +109,11 @@ public class FloatingService extends Service {
             float base = mid + amp * (float) Math.sin(mockPhase);
             float jitter = (float) (Math.random() * (amp * 0.15f)) - amp * 0.075f;
             float speedKmh = Math.max(0f, base + jitter);
-            applyMockUpdate(speedKmh);
-            mockHandler.postDelayed(this, LOCATION_INTERVAL_MS);
+            // 动态频率：速度超过变色参考速度时 0.5s，否则 1s
+            int limit = FloatingViewManager.getInstance().getSpeedLimit();
+            long interval = (limit > 0 && speedKmh > limit) ? FAST_INTERVAL_MS : SLOW_INTERVAL_MS;
+            applyMockUpdate(speedKmh, interval);
+            mockHandler.postDelayed(this, interval);
         }
     };
 
@@ -172,12 +179,12 @@ public class FloatingService extends Service {
         super.onDestroy();
     }
 
-    /** 模拟一次速度更新：写入速度并按 1 秒间隔累加里程。 */
-    private void applyMockUpdate(float speedKmh) {
+    /** 模拟一次速度更新：写入速度并按实际间隔累加里程。 */
+    private void applyMockUpdate(float speedKmh, long intervalMs) {
         FloatingViewManager mgr = FloatingViewManager.getInstance();
         mgr.updateSpeed(speedKmh);
-        // 里程 = 速度(km/h) / 3.6 * 1s = 米
-        mgr.addDistance(speedKmh / 3.6f);
+        // 里程 = 速度(km/h) / 3.6 * 间隔秒数 = 米
+        mgr.addDistance(speedKmh / 3.6f * (intervalMs / 1000f));
     }
 
     private void startMockUpdates() {
@@ -287,19 +294,40 @@ public class FloatingService extends Service {
                 }
             };
         }
-        LocationRequest request = new LocationRequest.Builder(
-                Priority.PRIORITY_HIGH_ACCURACY, LOCATION_INTERVAL_MS)
-                .setMinUpdateIntervalMillis(LOCATION_INTERVAL_MS)
-                .setWaitForAccurateLocation(false)
-                .build();
+        // 初始低速档（1s），速度超过变色参考速度后自动切高速档（0.5s）
+        fastIntervalActive = false;
         try {
-            fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper());
+            fusedClient.requestLocationUpdates(buildLocationRequest(), locationCallback, Looper.getMainLooper());
             receivingLocation = true;
             updateNotificationText(getString(R.string.notif_text));
         } catch (SecurityException e) {
             // 缺少定位权限
             receivingLocation = false;
             toastFromService(R.string.perm_rationale_location);
+        }
+    }
+
+    /** 根据当前档位构建定位请求（高速档 0.5s / 低速档 1s）。 */
+    private LocationRequest buildLocationRequest() {
+        long interval = fastIntervalActive ? FAST_INTERVAL_MS : SLOW_INTERVAL_MS;
+        return new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, interval)
+                .setMinUpdateIntervalMillis(interval)
+                .setWaitForAccurateLocation(false)
+                .build();
+    }
+
+    /** 速度跨越变色参考速度阈值时，切换定位频率以平衡灵敏度与能耗。 */
+    private void maybeAdjustLocationInterval(float speedKmh) {
+        if (!receivingLocation) return;
+        int limit = FloatingViewManager.getInstance().getSpeedLimit();
+        boolean shouldFast = limit > 0 && speedKmh > limit;
+        if (shouldFast == fastIntervalActive) return;  // 档位未变，无需重启
+        fastIntervalActive = shouldFast;
+        try {
+            fusedClient.removeLocationUpdates(locationCallback);
+            fusedClient.requestLocationUpdates(buildLocationRequest(), locationCallback, Looper.getMainLooper());
+        } catch (SecurityException ignored) {
+            // 极少见：权限在运行中被撤销
         }
     }
 
@@ -349,5 +377,7 @@ public class FloatingService extends Service {
         lastLocation = loc;
 
         mgr.updateSpeed(speedKmh);
+        // 速度跨越变色阈值时动态调整定位频率
+        maybeAdjustLocationInterval(speedKmh);
     }
 }
