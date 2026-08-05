@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <!-- 悬浮球：蓝色边框/文字 -->
+    <color name="speed_blue">#FF1565C0</color>
+    <color name="speed_blue_light">#FF42A5F5</color>
+    <color name="speed_bg_white">#FFFFFFFF</color>
+    <!-- 速度环：背景灰 + 三段变色 -->
+    <color name="speed_ring_bg">#FFE6E6E6</color>
+    <color name="speed_green">#FF4CAF50</color>
+    <color name="speed_orange">#FFFFA000</color>
+    <color name="speed_red">#FFE53935</color>
+    <color name="speed_text_dark">#FF102A43</color>
+</resources>

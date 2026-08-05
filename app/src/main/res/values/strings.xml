@@ -1,0 +1,47 @@
+<resources>
+    <string name="app_name">SpeedView</string>
+
+    <!-- 主界面 -->
+    <string name="speed_label">当前速度</string>
+    <string name="distance_label">累计里程</string>
+    <string name="avg_speed_label">平均速度</string>
+    <string name="max_speed_label">最高速度</string>
+    <string name="unit_kmh">km/h</string>
+    <string name="unit_km">km</string>
+    <string name="start_ride">开始骑行</string>
+    <string name="stop_ride">结束骑行</string>
+    <string name="riding_status_idle">未开始</string>
+    <string name="riding_status_running">骑行中</string>
+
+    <!-- 通知 -->
+    <string name="notif_channel_name">骑行定位服务</string>
+    <string name="notif_channel_desc">用于在悬浮球中实时显示骑行速度</string>
+    <string name="notif_title">SpeedView 运行中</string>
+    <string name="notif_text">正在记录骑行速度与里程</string>
+
+    <!-- 权限说明 -->
+    <string name="perm_rationale_location">需要定位权限才能实时显示骑行速度并记录里程。</string>
+    <string name="perm_rationale_overlay">需要悬浮窗权限才能在其他应用上方显示速度浮球。</string>
+    <string name="perm_rationale_bg_location">需要后台定位权限才能在屏幕关闭或切到后台时继续记录骑行数据。</string>
+    <string name="perm_rationale_notification">需要通知权限以显示前台服务通知，保证骑行中持续定位。</string>
+
+    <!-- 设置 -->
+    <string name="settings">设置</string>
+    <string name="settings_ref_speed">变色参考速度</string>
+    <string name="settings_ref_speed_hint">超过该速度的 90% 变橙，110% 变红</string>
+    <string name="settings_arc_max_speed">弧满量程最大速度</string>
+    <string name="settings_arc_max_speed_hint">速度达到该值时进度弧填满 100%</string>
+    <string name="settings_mock_profile">测试数据范围</string>
+    <string name="settings_mock_profile_hint">选择模拟速度的波动区间</string>
+    <string name="settings_ball_size">悬浮球大小</string>
+    <string name="settings_ball_size_hint">拖动调整直径，范围 64 ~ 256 dp</string>
+    <string name="settings_ref_speed_suffix">km/h</string>
+    <string name="settings_confirm">确定</string>
+    <string name="settings_cancel">取消</string>
+    <string name="settings_invalid_input">请输入有效的正整数</string>
+    <string name="settings_ref_exceeds_arc">变色参考速度不能大于弧满量程最大速度</string>
+
+    <!-- 模拟模式 -->
+    <string name="mock_mode">模拟模式（测试用）</string>
+    <string name="mock_mode_desc">不使用真实定位，用模拟速度数据驱动浮球</string>
+</resources>

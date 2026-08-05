@@ -1,0 +1,241 @@
+package com.liuliu.speedview;
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.Service;
+import android.content.Intent;
+import android.content.pm.ServiceInfo;
+import android.location.Location;
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+
+import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
+
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
+import com.google.android.gms.location.Priority;
+
+/**
+ * 悬浮球前台服务。
+ * 职责：
+ * 1. 以 foregroundServiceType=location 运行，保证后台持续定位。
+ * 2. 使用 FusedLocationProviderClient 1 秒间隔获取定位。
+ * 3. 过滤：accuracy < 20m 且单次位移 0~50m 才计入里程。
+ * 4. 将速度/里程写入 {@link FloatingViewManager}，由其刷新悬浮球与统计。
+ */
+public class FloatingService extends Service {
+
+    private static final String CHANNEL_ID = "speedview_location";
+    private static final int NOTIF_ID = 1001;
+    /** Intent extra：为 true 时使用模拟数据，不依赖真实定位（用于功能测试）。 */
+    public static final String EXTRA_MOCK_MODE = "mock_mode";
+
+    /** 定位精度阈值（米），超过则视为漂移丢弃 */
+    private static final float ACCURACY_THRESHOLD_M = 20f;
+    /** 单次位移阈值（米），超出 [0, 50] 视为漂移丢弃 */
+    private static final float MAX_STEP_M = 50f;
+    private static final float MIN_STEP_M = 0f;
+    /** 定位间隔（毫秒） */
+    private static final long LOCATION_INTERVAL_MS = 1000L;
+
+    private FusedLocationProviderClient fusedClient;
+    private LocationCallback locationCallback;
+    private Location lastLocation;
+    private boolean receivingLocation = false;
+
+    // 模拟模式：用正弦波 + 抖动生成速度，便于无 GPS 环境下测试变色与里程
+    private boolean mockMode = false;
+    private boolean mockRunning = false;
+    private float mockPhase = 0f;
+    private float mockMinKmh = 20f;
+    private float mockMaxKmh = 90f;
+    private final Handler mockHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mockRunnable = new Runnable() {
+        @Override
+        public void run() {
+            // 在 [mockMin, mockMax] 之间正弦波动，并叠加小幅随机抖动
+            float mid = (mockMinKmh + mockMaxKmh) / 2f;
+            float amp = (mockMaxKmh - mockMinKmh) / 2f;
+            mockPhase += 0.06f;
+            float base = mid + amp * (float) Math.sin(mockPhase);
+            float jitter = (float) (Math.random() * (amp * 0.15f)) - amp * 0.075f;
+            float speedKmh = Math.max(0f, base + jitter);
+            applyMockUpdate(speedKmh);
+            mockHandler.postDelayed(this, LOCATION_INTERVAL_MS);
+        }
+    };
+
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        FloatingViewManager.getInstance().init(this);
+        fusedClient = LocationServices.getFusedLocationProviderClient(this);
+        createNotificationChannel();
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        startForegroundCompat();
+        FloatingViewManager mgr = FloatingViewManager.getInstance();
+        mgr.init(this);
+        // 应用持久化的设置：变色参考速度 + 进度弧最大速度 + 球大小
+        mgr.setSpeedLimit(AppPrefs.getRefSpeed(this));
+        mgr.setArcMaxSpeed(AppPrefs.getArcMaxSpeed(this));
+        mgr.setBallSize(AppPrefs.getBallSizeDp(this));
+        mgr.show();
+
+        mockMode = intent != null && intent.getBooleanExtra(EXTRA_MOCK_MODE, false);
+        if (mockMode) {
+            startMockUpdates();
+        } else {
+            startLocationUpdates();
+        }
+        return START_STICKY;
+    }
+
+    @Override
+    public void onDestroy() {
+        stopMockUpdates();
+        stopLocationUpdates();
+        FloatingViewManager.getInstance().hide();
+        super.onDestroy();
+    }
+
+    /** 模拟一次速度更新：写入速度并按 1 秒间隔累加里程。 */
+    private void applyMockUpdate(float speedKmh) {
+        FloatingViewManager mgr = FloatingViewManager.getInstance();
+        mgr.updateSpeed(speedKmh);
+        // 里程 = 速度(km/h) / 3.6 * 1s = 米
+        mgr.addDistance(speedKmh / 3.6f);
+    }
+
+    private void startMockUpdates() {
+        if (mockRunning) return;
+        // 读取活动类型预设的速度范围
+        MockProfile profile = MockProfile.get(AppPrefs.getMockProfileIdx(this));
+        mockMinKmh = profile.minKmh;
+        mockMaxKmh = profile.maxKmh;
+        mockRunning = true;
+        mockPhase = 0f;
+        mockHandler.post(mockRunnable);
+    }
+
+    private void stopMockUpdates() {
+        if (!mockRunning) return;
+        mockHandler.removeCallbacks(mockRunnable);
+        mockRunning = false;
+    }
+
+    /** 启动前台服务并指定 location 类型（Android 14+ 强制要求）。 */
+    private void startForegroundCompat() {
+        Notification notification = buildNotification();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+        } else {
+            startForeground(NOTIF_ID, notification);
+        }
+    }
+
+    private Notification buildNotification() {
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle(getString(R.string.notif_title))
+                .setContentText(getString(R.string.notif_text))
+                .setSmallIcon(android.R.drawable.ic_menu_compass)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
+    }
+
+    private void createNotificationChannel() {
+        NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (nm == null) return;
+        NotificationChannel channel = new NotificationChannel(
+                CHANNEL_ID,
+                getString(R.string.notif_channel_name),
+                NotificationManager.IMPORTANCE_LOW);
+        channel.setDescription(getString(R.string.notif_channel_desc));
+        nm.createNotificationChannel(channel);
+    }
+
+    private void startLocationUpdates() {
+        if (receivingLocation) return;
+        if (locationCallback == null) {
+            locationCallback = new LocationCallback() {
+                @Override
+                public void onLocationResult(@Nullable LocationResult result) {
+                    if (result == null) return;
+                    for (Location loc : result.getLocations()) {
+                        handleLocation(loc);
+                    }
+                }
+            };
+        }
+        LocationRequest request = new LocationRequest.Builder(
+                Priority.PRIORITY_HIGH_ACCURACY, LOCATION_INTERVAL_MS)
+                .setMinUpdateIntervalMillis(LOCATION_INTERVAL_MS)
+                .setWaitForAccurateLocation(false)
+                .build();
+        try {
+            fusedClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper());
+            receivingLocation = true;
+        } catch (SecurityException e) {
+            // 缺少定位权限
+            receivingLocation = false;
+        }
+    }
+
+    private void stopLocationUpdates() {
+        if (!receivingLocation || locationCallback == null) return;
+        fusedClient.removeLocationUpdates(locationCallback);
+        receivingLocation = false;
+    }
+
+    /** 处理单次定位：过滤、计算速度与里程，写入 Manager。 */
+    private void handleLocation(Location loc) {
+        if (loc == null) return;
+        // 精度过滤
+        if (loc.getAccuracy() <= 0f || loc.getAccuracy() > ACCURACY_THRESHOLD_M) return;
+
+        FloatingViewManager mgr = FloatingViewManager.getInstance();
+
+        // 速度（m/s -> km/h），优先使用系统速度，缺失时用位移/时间估算
+        float speedKmh;
+        if (loc.hasSpeed() && loc.getSpeed() >= 0f) {
+            speedKmh = loc.getSpeed() * 3.6f;
+        } else {
+            speedKmh = 0f;
+        }
+
+        if (lastLocation != null) {
+            float distance = loc.distanceTo(lastLocation);
+            // 位移过滤：0~50m 才计入里程
+            if (distance > MIN_STEP_M && distance < MAX_STEP_M) {
+                mgr.addDistance(distance);
+                // 若系统速度缺失或为 0，则用位移/时间估算
+                if (speedKmh == 0f) {
+                    long dtMs = loc.getTime() - lastLocation.getTime();
+                    if (dtMs > 0L) {
+                        speedKmh = (distance / (dtMs / 1000f)) * 3.6f;
+                    }
+                }
+            }
+            // distance 不在区间内视为漂移，不计里程，速度也保持上一次有效值
+        }
+        lastLocation = loc;
+
+        mgr.updateSpeed(speedKmh);
+    }
+}
